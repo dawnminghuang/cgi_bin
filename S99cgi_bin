@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# Start/stop cgi_bin
+#
+
+CGI_BIN=/usr/bin/cgi_bin
+PIDFILE=/var/run/cgi_bin.pid
+
+case "$1" in
+  start)
+	echo "Starting cgi_bin..."
+	mkdir -p /var/log/cgi_bin
+	start-stop-daemon -S -b -x "$CGI_BIN" -p "$PIDFILE" --make-pidfile
+	;;
+  stop)
+	echo "Stopping cgi_bin..."
+	start-stop-daemon -K -x "$CGI_BIN" -p "$PIDFILE" -o
+	;;
+  reload|force-reload)
+	echo "Reloading cgi_bin configuration..."
+	"$CGI_BIN" -s reload
+	;;
+  restart)
+	"$0" stop
+	sleep 1 # Prevent race condition: ensure cgi_bin stops before start.
+	"$0" start
+	;;
+  *)
+	echo "Usage: $0 {start|stop|restart|reload|force-reload}"
+	exit 1
+esac
