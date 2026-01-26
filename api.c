@@ -534,34 +534,53 @@ int Network_Set_handler(cJSON *root, int socket_fd) {
     LOG_DEBUG("Mac: %s", mac);
     LOG_DEBUG("DhcpEnable: %d", dhcp_enable);
 
-    // 先清空/etc/network/interfaces
+        // 先清空/etc/network/interfaces
+    LOG_DEBUG("Updating LAN Interface (eth1:1) with Address: %s, Mask: %s", address, mask);
+
+    // 打开文件进行覆盖写入
     fp = fopen("/etc/network/interfaces", "w");
     if (fp == NULL) {
         LOG_ERROR("Failed to open /etc/network/interfaces for writing");
         general_reply("Network_Set", 1, socket_fd, "Failed to Write");
         return 1;
     }
-     
-    // 写入接口配置
+    
+    // 1. 写入回环接口
     fprintf(fp, "auto lo\n");
     fprintf(fp, "iface lo inet loopback\n\n");
-    fprintf(fp, "auto %s\n", device);
-    if (dhcp_enable) {
-        fprintf(fp, "iface %s inet dhcp\n", device);
+
+    // 2. 写入主接口 eth1 (固定为 DHCP 角色，用于外网/云端连接)
+    fprintf(fp, "# Primary interface eth1: WAN role\n");
+    fprintf(fp, "auto eth1\n");
+    fprintf(fp, "iface eth1 inet dhcp\n\n");
+
+    // 3. 写入虚拟子接口 eth1:1 (根据 Web 端信息更新，用于本地管理)
+    // 注意：这里忽略 Web 端的 DhcpEnable 参数，因为子接口通常设为静态
+    fprintf(fp, "# Virtual sub-interface eth1:1: LAN role for management\n");
+    fprintf(fp, "auto eth1:1\n");
+    fprintf(fp, "iface eth1:1 inet static\n");
+
+    if (strlen(address) > 0) {
+        fprintf(fp, "    address %s\n", address);
     } else {
-        fprintf(fp, "iface %s inet static\n", device);
-        if (strlen(address) > 0) {
-            fprintf(fp, "        address %s\n", address);
-        }
-        if (strlen(mask) > 0) {
-            fprintf(fp, "        netmask %s\n", mask);
-        }
-        if (strlen(gateway) > 0) {
-            fprintf(fp, "        gateway %s\n", gateway);
-        }
+        // 如果 Web 端没传地址，给一个默认值防止配置失效
+        fprintf(fp, "    address 192.168.0.21\n");
     }
+
+    // --- 关键修复点：确保 netmask 格式正确 ---
+    // 检查 mask 是否包含 "255"，如果不包含或为空，强制给一个合法掩码
+    if (strlen(mask) > 0 && strstr(mask, "255") != NULL) {
+        fprintf(fp, "    netmask %s\n", mask);
+    } else {
+        // 如果 Web 端误传了网关地址到 Mask 字段，强制纠正为标准子网掩码
+        fprintf(fp, "    netmask 255.255.255.0\n"); 
+    }
+
+    // 注意：此处不写入 Gateway，以避免与 eth1 的 DHCP 默认路由冲突
     fprintf(fp, "\n");
+
     fclose(fp);
+
     
     // 更新resolv.conf中的DNS配置
     memset(cmd, 0, sizeof(cmd));
@@ -1768,7 +1787,9 @@ int Passwd_handler(cJSON *root, int socket_fd) {
     
     // 移除可能的换行符
     stored_password[strcspn(stored_password, "\r\n")] = '\0';
-    
+
+    LOG_ERROR("Old password MD5: %s", old_passwd_md5);
+    LOG_ERROR("Stored password MD5: %s", stored_password);
     // 验证旧密码是否正确
     if (strcmp(old_passwd_md5, stored_password) != 0) {
         LOG_ERROR("Old password is incorrect");
