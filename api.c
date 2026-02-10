@@ -2797,6 +2797,332 @@ int Config_Del_handler(cJSON *root, int socket_fd) {
     return result;
 }
 
+int Ftp_Fetch_handler(cJSON *root, int socket_fd) {
+    cJSON *response = NULL;
+    cJSON *data = NULL;
+    char *json_string = NULL;
+    int result = 1;
+
+    // 创建响应JSON对象
+    response = cJSON_CreateObject();
+    if (response == NULL) {
+        LOG_ERROR("Failed to create response JSON object");
+        goto end;
+    }
+
+    // 创建data对象
+    data = cJSON_CreateObject();
+    if (data == NULL) {
+        LOG_ERROR("Failed to create data JSON object");
+        goto end;
+    }
+
+    // 创建FTP配置结构体实例
+    FtpConfigInfo ftp_config = {0};
+    
+    // 调用查询函数，id固定为1
+    int ret = query_ftp_config(&ftp_config);
+    if (ret != 0) {
+        // 如果查询失败，返回空数据或默认值
+        cJSON_AddStringToObject(data, "FtpIpaddr", "");
+        cJSON_AddNumberToObject(data, "FtpPort", 0);
+        cJSON_AddStringToObject(data, "FtpId", "");
+        cJSON_AddStringToObject(data, "FtpUser", "");
+        cJSON_AddStringToObject(data, "FtpPasswd", "");
+    } else {
+        // 查询成功，添加实际数据
+        cJSON_AddStringToObject(data, "FtpIpaddr", ftp_config.FtpIpaddr);
+        cJSON_AddNumberToObject(data, "FtpPort", ftp_config.FtpPort);
+        cJSON_AddStringToObject(data, "FtpId", ftp_config.FtpId);
+        cJSON_AddStringToObject(data, "FtpUser", ftp_config.FtpUser);
+        cJSON_AddStringToObject(data, "FtpPasswd", ftp_config.FtpPasswd);
+    }
+
+    // 添加字段到返回的JSON对象
+    cJSON_AddStringToObject(response, "Event", "Ftp_Fetch");
+    cJSON_AddItemToObject(response, "data", data);
+    cJSON_AddNumberToObject(response, "Status", 0);
+    cJSON_AddStringToObject(response, "Message", "success");
+
+    // 转换为JSON字符串
+    json_string = cJSON_Print(response);
+    if (json_string == NULL) {
+        LOG_ERROR("Failed to print JSON response");
+        goto end;
+    }
+
+    // 发送响应
+    result = send_http_response(socket_fd, json_string);
+
+end:
+    if (response) {
+        cJSON_Delete(response);
+    }
+    if (json_string) {
+        free(json_string);
+    }
+
+    return result;
+}
+
+int Ftp_Update_handler(cJSON *root, int socket_fd) {
+    cJSON *item = NULL;
+    FtpConfigInfo ftp_config = {0};
+    int result = 1;
+
+    item = cJSON_GetObjectItem(root, "FtpIpaddr");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(ftp_config.FtpIpaddr, item->valuestring, sizeof(ftp_config.FtpIpaddr) - 1);
+    }
+
+    item = cJSON_GetObjectItem(root, "FtpPort");
+    if (item != NULL && cJSON_IsNumber(item)) {
+        ftp_config.FtpPort = item->valueint;
+    }
+
+    item = cJSON_GetObjectItem(root, "FtpUser");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(ftp_config.FtpUser, item->valuestring, sizeof(ftp_config.FtpUser) - 1);
+    }
+
+    item = cJSON_GetObjectItem(root, "FtpPasswd");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(ftp_config.FtpPasswd, item->valuestring, sizeof(ftp_config.FtpPasswd) - 1);
+    }
+
+    item = cJSON_GetObjectItem(root, "FtpId");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(ftp_config.FtpId, item->valuestring, sizeof(ftp_config.FtpId) - 1);
+    }
+
+    // 调用更新函数，更新ID为1的记录
+    int ret = update_ftp_config(&ftp_config);
+    if (ret != 0) {
+        LOG_ERROR("Failed to update FTP config");
+        general_reply("Ftp_Update", 1, socket_fd, "Failed to update FTP config");
+        return 1;
+    }
+
+    // 发送成功响应
+    result = general_reply("Ftp_Update", 0, socket_fd, NULL);
+    tcp_client_send(CONFIG_SL651);
+    return result;
+}
+
+int SZ651_Fetch_handler(cJSON *root, int socket_fd) {
+    cJSON *response = NULL;
+    cJSON *data_array = NULL;
+    char *json_string = NULL;
+    int result = 1;
+
+    // 创建响应JSON对象
+    response = cJSON_CreateObject();
+    if (response == NULL) {
+        LOG_ERROR("Failed to create response JSON object");
+        goto end;
+    }
+
+    // 创建data数组
+    data_array = cJSON_CreateArray();
+    if (data_array == NULL) {
+        LOG_ERROR("Failed to create data array JSON object");
+        goto end;
+    }
+
+    // 创建SZ651配置列表结构体实例
+    SzConfigList sz651_list = {0};
+
+    // 调用查询函数获取所有SZ651配置
+    int ret = query_all_sz651_configs(&sz651_list);
+    if (ret != 0) {
+        LOG_ERROR("Failed to query SZ651 configurations");
+    } else {
+        // 遍历配置列表，添加到data数组中
+        for (int i = 0; i < sz651_list.count; i++) {
+            cJSON *config_obj = cJSON_CreateObject();
+            if (config_obj == NULL) {
+                LOG_ERROR("Failed to create config object");
+                continue;
+            }
+
+            // 添加配置信息到对象
+            cJSON_AddNumberToObject(config_obj, "Id", sz651_list.configs[i].Id);
+            cJSON_AddStringToObject(config_obj, "SzIpaddr", sz651_list.configs[i].SzIpaddr);
+            cJSON_AddNumberToObject(config_obj, "SzPort", sz651_list.configs[i].SzPort);
+            cJSON_AddStringToObject(config_obj, "SzAddr", sz651_list.configs[i].SzAddr);
+            cJSON_AddStringToObject(config_obj, "SzUser", sz651_list.configs[i].SzUser);
+            cJSON_AddStringToObject(config_obj, "SzPasswd", sz651_list.configs[i].SzPasswd);
+
+            // 将配置对象添加到数组
+            cJSON_AddItemToArray(data_array, config_obj);
+        }
+    }
+
+    // 添加字段到返回的JSON对象
+    cJSON_AddStringToObject(response, "Event", "SZ651_Fetch");
+    cJSON_AddItemToObject(response, "data", data_array);
+    cJSON_AddNumberToObject(response, "Status", 0);
+    cJSON_AddStringToObject(response, "Message", "Success");
+
+    // 转换为JSON字符串
+    json_string = cJSON_Print(response);
+    if (json_string == NULL) {
+        LOG_ERROR("Failed to print JSON response");
+        goto end;
+    }
+
+    // 发送响应
+    result = send_http_response(socket_fd, json_string);
+
+end:
+    // 释放资源
+    free_sz651_config_list(&sz651_list);
+    if (response) {
+        cJSON_Delete(response);
+    }
+    if (json_string) {
+        free(json_string);
+    }
+
+    return result;
+}
+
+int SZ651_Add_handler(cJSON *root, int socket_fd) {
+    cJSON *item = NULL;
+    SzConfigInfo sz_config = {0};
+    int result = 1;
+
+    if(root == NULL) {
+        LOG_ERROR("root is null");
+        general_reply("SZ651_Add", 1, socket_fd, "Failed to get Data");
+        return result;
+    }
+
+    item = cJSON_GetObjectItem(root, "SzIpaddr");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(sz_config.SzIpaddr, item->valuestring, sizeof(sz_config.SzIpaddr) - 1);
+    }
+
+    item = cJSON_GetObjectItem(root, "SzPort");
+    if (item != NULL && cJSON_IsNumber(item)) {
+        sz_config.SzPort = item->valueint;
+    }
+
+    item = cJSON_GetObjectItem(root, "SzAddr");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(sz_config.SzAddr, item->valuestring, sizeof(sz_config.SzAddr) - 1);
+    }
+
+    item = cJSON_GetObjectItem(root, "SzUser");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(sz_config.SzUser, item->valuestring, sizeof(sz_config.SzUser) - 1);
+    }
+
+    item = cJSON_GetObjectItem(root, "SzPasswd");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(sz_config.SzPasswd, item->valuestring, sizeof(sz_config.SzPasswd) - 1);
+    }
+
+    // 向数据库添加配置
+    if (add_sz651_config(&sz_config) != 0) {
+        LOG_ERROR("Failed to add sz_config to database");
+        general_reply("SZ651_Add", 1, socket_fd, "Failed to add sz_config to database");
+        return 1;
+    }
+
+    // 发送成功响应
+    result = general_reply("SZ651_Add", 0, socket_fd, NULL);
+    tcp_client_send(CONFIG_SL651);
+    return result;
+}
+
+int SZ651_Modify_handler(cJSON *root, int socket_fd) {
+    cJSON *item = NULL;
+    SzConfigInfo sz_config = {0};
+    int result = 1;
+
+    if(root == NULL) {
+        LOG_ERROR("root is null");
+        general_reply("SZ651_Modify", 1, socket_fd, "Failed to get Data");
+        return result;
+    }
+
+    item = cJSON_GetObjectItem(root, "Id");
+    if (item != NULL && cJSON_IsNumber(item)) {
+        sz_config.Id = item->valueint;
+    }
+
+    item = cJSON_GetObjectItem(root, "SzIpaddr");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(sz_config.SzIpaddr, item->valuestring, sizeof(sz_config.SzIpaddr) - 1);
+    }
+
+    item = cJSON_GetObjectItem(root, "SzPort");
+    if (item != NULL && cJSON_IsNumber(item)) {
+        sz_config.SzPort = item->valueint;
+    }
+
+    item = cJSON_GetObjectItem(root, "SzAddr");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(sz_config.SzAddr, item->valuestring, sizeof(sz_config.SzAddr) - 1);
+    }
+
+    item = cJSON_GetObjectItem(root, "SzUser");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(sz_config.SzUser, item->valuestring, sizeof(sz_config.SzUser) - 1);
+    }
+
+    item = cJSON_GetObjectItem(root, "SzPasswd");
+    if (item != NULL && cJSON_IsString(item)) {
+        strncpy(sz_config.SzPasswd, item->valuestring, sizeof(sz_config.SzPasswd) - 1);
+    }
+
+    // 向数据库添加配置
+    if (modify_sz651_config_by_id(&sz_config) != 0) {
+        LOG_ERROR("Failed to modify sz_config to database");
+        general_reply("SZ651_Modify", 1, socket_fd, "Failed to add sz_config to database");
+        return 1;
+    }
+
+    // 发送成功响应
+    result = general_reply("SZ651_Modify", 0, socket_fd, NULL);
+    tcp_client_send(CONFIG_SL651);
+    return result;
+}
+
+int SZ651_Del_handler(cJSON *root, int socket_fd) {
+    cJSON *item = NULL;
+    int Id = 0;
+    int result = 1;
+
+    if(root == NULL) {
+        LOG_ERROR("root is null");
+        general_reply("SZ651_Del", 1, socket_fd, "Failed to get Data");
+        return result;
+    }
+
+    // 获取 Id
+    item = cJSON_GetObjectItem(root, "Id");
+    if (item != NULL && cJSON_IsNumber(item)) {
+        Id = item->valueint;
+    }
+
+    LOG_DEBUG("Id: %d", Id);
+    
+    // 从数据库删除配置
+    if (delete_sz651_config_by_id(Id) != 0) {
+        LOG_ERROR("Failed to delete sz_config from database");
+        general_reply("SZ651_Del", 1, socket_fd, "Failed to delete sz_config from database");
+        return 1;
+    }
+
+    // 发送成功响应
+    result = general_reply("SZ651_Del", 0, socket_fd, NULL);
+    tcp_client_send(CONFIG_SL651);
+
+    return result;
+}
+
 OperationHandler operation_handlers[] = {
     {"Login", Login_handler},
     {"Info", Info_handler},
@@ -2828,6 +3154,12 @@ OperationHandler operation_handlers[] = {
     {"Config_Update", Config_Update_handler},
     {"Config_Add", Config_Add_handler},
     {"Config_Del", Config_Del_handler},
+    {"Ftp_Fetch", Ftp_Fetch_handler},
+    {"Ftp_Update", Ftp_Update_handler},
+    {"SZ651_Fetch", SZ651_Fetch_handler},
+    {"SZ651_Add", SZ651_Add_handler},
+    {"SZ651_Modify", SZ651_Modify_handler},
+    {"SZ651_Del", SZ651_Del_handler},
 };
 
 int num_operation_handlers = sizeof(operation_handlers) / sizeof(operation_handlers[0]);
@@ -2860,7 +3192,7 @@ int message_handle_data(char *operation, char *json_string, int socket_fd) {
                 json_error_reply(socket_fd);
             }
         } else {
-            LOG_ERROR("Failed to get Event field"); // 修正字段名
+            LOG_ERROR("Failed to get Event failed"); // 修正字段名
             json_error_reply(socket_fd);
         }
 

@@ -140,6 +140,36 @@ static int create_tables() {
         return rc;
     }
 
+    // 创建 FtpConfig 表，用于存储FTP配置信息
+    const char* sql_ftp_config = "CREATE TABLE IF NOT EXISTS FtpConfig ("
+    "Id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "FtpIpaddr TEXT NOT NULL,"
+    "FtpPort INTEGER,"
+    "FtpId TEXT,"
+    "FtpUser TEXT,"
+    "FtpPasswd TEXT,"
+    "created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP);";
+
+    rc = execute_sql(sql_ftp_config);
+    if (rc != 0) {
+        return rc;
+    }
+
+    // 创建 Sz651Config 表，用于存储SZ651平台配置信息
+    const char* sql_sz651_config = "CREATE TABLE IF NOT EXISTS Sz651Config ("
+    "Id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "SzIpaddr TEXT NOT NULL,"           // SZ651平台地址
+    "SzPort INTEGER,"                   // SZ651平台端口
+    "SzAddr TEXT,"                      // 测站地址
+    "SzUser TEXT,"                      // 中心站地址
+    "SzPasswd TEXT,"                    // 中心站密码
+    "created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP);";
+
+    rc = execute_sql(sql_sz651_config);
+    if (rc != 0) {
+        return rc;
+    }
+
     return 0; // 添加返回值
 }
 
@@ -1224,3 +1254,226 @@ void free_config_list(ConfigList* config_list) {
         config_list->capacity = 0;
     }
 }
+
+// 修改FTP配置，如果没有ID=1的记录则插入新记录
+int update_ftp_config(const FtpConfigInfo* ftp_config) {
+    // 首先检查是否存在ID=1的记录
+    sqlite3_stmt* stmt;
+    const char* sql_check = "SELECT COUNT(*) FROM FtpConfig WHERE Id = 1;";
+    
+    int rc = sqlite3_prepare_v2(db, sql_check, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        LOG_ERROR("Failed to prepare check statement: %s", sqlite3_errmsg(db));
+        return rc;
+    }
+    
+    rc = sqlite3_step(stmt);
+    int count = 0;
+    if (rc == SQLITE_ROW) {
+        count = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    
+    if (count > 0) {
+        // ID=1的记录存在，执行更新操作
+        char sql[1024];
+        snprintf(sql, sizeof(sql),
+                 "UPDATE FtpConfig SET FtpIpaddr = '%s', FtpPort = %d, FtpId = '%s', FtpUser = '%s', FtpPasswd = '%s' "
+                 "WHERE Id = 1;",
+                 ftp_config->FtpIpaddr[0] ? ftp_config->FtpIpaddr : "",
+                 ftp_config->FtpPort,
+                 ftp_config->FtpId[0] ? ftp_config->FtpId : "",
+                 ftp_config->FtpUser[0] ? ftp_config->FtpUser : "",
+                 ftp_config->FtpPasswd[0] ? ftp_config->FtpPasswd : "");
+        
+        return execute_sql(sql);
+    } else {
+        // ID=1的记录不存在，插入新记录
+        char sql[1024];
+        snprintf(sql, sizeof(sql),
+                 "INSERT INTO FtpConfig (Id, FtpIpaddr, FtpPort, FtpId, FtpUser, FtpPasswd) "
+                 "VALUES (1, '%s', %d, '%s', '%s', '%s');",
+                 ftp_config->FtpIpaddr[0] ? ftp_config->FtpIpaddr : "",
+                 ftp_config->FtpPort,
+                 ftp_config->FtpId[0] ? ftp_config->FtpId : "",
+                 ftp_config->FtpUser[0] ? ftp_config->FtpUser : "",
+                 ftp_config->FtpPasswd[0] ? ftp_config->FtpPasswd : "");
+        
+        return execute_sql(sql);
+    }
+}
+
+// 根据ID查询单个FTP配置
+int query_ftp_config(FtpConfigInfo* ftp_config) {
+    sqlite3_stmt* stmt;
+    char sql[512];
+    
+    snprintf(sql, sizeof(sql),
+         "SELECT Id, FtpIpaddr, FtpPort, FtpId, FtpUser, FtpPasswd "
+         "FROM FtpConfig WHERE Id = 1;");
+
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+
+    if (rc != SQLITE_OK) {
+        LOG_ERROR("Failed to prepare statement: %s", sqlite3_errmsg(db));
+        return rc;
+    }
+    
+    // 执行查询
+    rc = sqlite3_step(stmt);
+    
+    if (rc == SQLITE_ROW) {
+        // 填充FtpConfigInfo结构体
+        ftp_config->Id = sqlite3_column_int(stmt, 0);
+        
+        const char* temp_ip = (const char*)sqlite3_column_text(stmt, 1);
+        strncpy(ftp_config->FtpIpaddr, temp_ip ? temp_ip : "", sizeof(ftp_config->FtpIpaddr) - 1);
+        ftp_config->FtpIpaddr[sizeof(ftp_config->FtpIpaddr) - 1] = '\0';
+        
+        ftp_config->FtpPort = sqlite3_column_int(stmt, 2);
+        
+        const char* temp_id = (const char*)sqlite3_column_text(stmt, 3);
+        strncpy(ftp_config->FtpId, temp_id ? temp_id : "", sizeof(ftp_config->FtpId) - 1);
+        ftp_config->FtpId[sizeof(ftp_config->FtpId) - 1] = '\0';
+        
+        const char* temp_user = (const char*)sqlite3_column_text(stmt, 4);
+        strncpy(ftp_config->FtpUser, temp_user ? temp_user : "", sizeof(ftp_config->FtpUser) - 1);
+        ftp_config->FtpUser[sizeof(ftp_config->FtpUser) - 1] = '\0';
+        
+        const char* temp_pass = (const char*)sqlite3_column_text(stmt, 5);
+        strncpy(ftp_config->FtpPasswd, temp_pass ? temp_pass : "", sizeof(ftp_config->FtpPasswd) - 1);
+        ftp_config->FtpPasswd[sizeof(ftp_config->FtpPasswd) - 1] = '\0';
+        
+        sqlite3_finalize(stmt);
+        return 0; // 成功找到并填充数据
+    } else if (rc == SQLITE_DONE) {
+        // 没有找到匹配的记录
+        sqlite3_finalize(stmt);
+        return 1; // 未找到记录
+    } else {
+        // 查询出错
+        LOG_ERROR("Failed to query FtpConfig: %s", sqlite3_errmsg(db));
+        sqlite3_finalize(stmt);
+        return rc;
+    }
+}
+
+// 查询所有SZ651配置到结构体
+int query_all_sz651_configs(SzConfigList* sz651_list) {
+    sqlite3_stmt* stmt;
+    const char* sql = "SELECT Id, SzIpaddr, SzPort, SzAddr, SzUser, SzPasswd FROM Sz651Config;";
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    
+    if (rc != SQLITE_OK) {
+        LOG_ERROR("Failed to fetch data: %s", sqlite3_errmsg(db));
+        return rc;
+    }
+    
+    // 初始化SzConfigList
+    sz651_list->count = 0;
+    sz651_list->capacity = 4; // 初始容量
+    sz651_list->configs = malloc(sizeof(SzConfigInfo) * sz651_list->capacity);
+    
+    if (!sz651_list->configs) {
+        LOG_ERROR("Failed to allocate memory for sz651 list");
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+    
+    // 遍历查询结果
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        // 如果需要，扩展容量
+        if (sz651_list->count >= sz651_list->capacity) {
+            sz651_list->capacity *= 2;
+            SzConfigInfo* temp = realloc(sz651_list->configs, sizeof(SzConfigInfo) * sz651_list->capacity);
+            if (!temp) {
+                LOG_ERROR("Failed to allocate memory for sz651 list");
+                free(sz651_list->configs);
+                sqlite3_finalize(stmt);
+                return -1;
+            }
+            sz651_list->configs = temp;
+        }
+        
+        // 填充当前SzConfigInfo结构体
+        SzConfigInfo* config = &sz651_list->configs[sz651_list->count];
+        config->Id = sqlite3_column_int(stmt, 0);
+        
+        const char* temp_str = (const char*)sqlite3_column_text(stmt, 1);
+        strncpy(config->SzIpaddr, temp_str ? temp_str : "", sizeof(config->SzIpaddr) - 1);
+        config->SzIpaddr[sizeof(config->SzIpaddr) - 1] = '\0';
+        
+        config->SzPort = sqlite3_column_int(stmt, 2);
+        
+        temp_str = (const char*)sqlite3_column_text(stmt, 3);
+        strncpy(config->SzAddr, temp_str ? temp_str : "", sizeof(config->SzAddr) - 1);
+        config->SzAddr[sizeof(config->SzAddr) - 1] = '\0';
+        
+        temp_str = (const char*)sqlite3_column_text(stmt, 4);
+        strncpy(config->SzUser, temp_str ? temp_str : "", sizeof(config->SzUser) - 1);
+        config->SzUser[sizeof(config->SzUser) - 1] = '\0';
+        
+        temp_str = (const char*)sqlite3_column_text(stmt, 5);
+        strncpy(config->SzPasswd, temp_str ? temp_str : "", sizeof(config->SzPasswd) - 1);
+        config->SzPasswd[sizeof(config->SzPasswd) - 1] = '\0';
+        
+        sz651_list->count++;
+    }
+    
+    sqlite3_finalize(stmt);
+    return 0;
+}
+
+// 添加SZ651配置
+int add_sz651_config(const SzConfigInfo* sz651_info) {
+    char sql[1024];
+    snprintf(sql, sizeof(sql), 
+             "INSERT INTO Sz651Config (SzIpaddr, SzPort, SzAddr, SzUser, SzPasswd) "
+             "VALUES ('%s', %d, '%s', '%s', '%s');",
+             sz651_info->SzIpaddr[0] ? sz651_info->SzIpaddr : "",
+             sz651_info->SzPort,
+             sz651_info->SzAddr[0] ? sz651_info->SzAddr : "",
+             sz651_info->SzUser[0] ? sz651_info->SzUser : "",
+             sz651_info->SzPasswd[0] ? sz651_info->SzPasswd : "");
+    
+    return execute_sql(sql);
+}
+
+// 根据ID删除SZ651配置
+int delete_sz651_config_by_id(int id) {
+    char sql[512];
+    snprintf(sql, sizeof(sql), 
+             "DELETE FROM Sz651Config WHERE Id = %d;",
+             id);
+    
+    return execute_sql(sql);
+}
+
+// 根据ID修改SZ651配置
+int modify_sz651_config_by_id(const SzConfigInfo* sz651_info) {
+    char sql[1024];
+    snprintf(sql, sizeof(sql),
+             "UPDATE Sz651Config SET SzIpaddr = '%s', SzPort = %d, SzAddr = '%s', "
+             "SzUser = '%s', SzPasswd = '%s' "
+             "WHERE Id = %d;",
+             sz651_info->SzIpaddr[0] ? sz651_info->SzIpaddr : "",
+             sz651_info->SzPort,
+             sz651_info->SzAddr[0] ? sz651_info->SzAddr : "",
+             sz651_info->SzUser[0] ? sz651_info->SzUser : "",
+             sz651_info->SzPasswd[0] ? sz651_info->SzPasswd : "",
+             sz651_info->Id);
+    
+    return execute_sql(sql);
+}
+
+// 释放SzConfigList内存
+void free_sz651_config_list(SzConfigList* sz651_list) {
+    if (sz651_list && sz651_list->configs) {
+        free(sz651_list->configs);
+        sz651_list->configs = NULL;
+        sz651_list->count = 0;
+        sz651_list->capacity = 0;
+    }
+}
+

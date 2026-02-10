@@ -36,6 +36,8 @@ typedef struct {
 #define CONFIG_TASK_CONFIG  "CONFIG_TASK_CONFIG"
 #define CONFIG_TASK_SNAP "CONFIG_TASK_SNAP"
 #define CONFIG_GLOBAL "CONFIG_GLOBAL"
+#define CONFIG_SL651 "CONFIG_SL651"
+
 
 int json_error_reply(int socket_fd);
 

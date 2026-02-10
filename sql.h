@@ -127,6 +127,32 @@ typedef struct {
     int capacity;
 } ConfigList;
 
+typedef struct {
+    int Id;
+    char FtpIpaddr[256];   // FTP平台地址
+    int FtpPort;           // FTP平台端口
+    char FtpId[128];       // 设备地址（设备ID）
+    char FtpUser[128];     // FTP平台用户名
+    char FtpPasswd[128];   // FTP平台密码
+} FtpConfigInfo;
+
+// SZ651平台配置信息结构体
+typedef struct {
+    int Id;
+    char SzIpaddr[256];   // SZ651平台地址
+    int SzPort;           // SZ651平台端口
+    char SzAddr[256];     // 测站地址
+    char SzUser[256];     // 中心站地址
+    char SzPasswd[256];   // 中心站密码
+} SzConfigInfo;
+
+// SZ651全局参数列表结构体
+typedef struct {
+    SzConfigInfo* configs;
+    int count;
+    int capacity;
+} SzConfigList;
+
 // 初始化数据库
 int init_database(void);
 
@@ -167,5 +193,14 @@ int delete_config_by_Id(const int Id);
 int modify_config_by_id(const ConfigInfo* config_info);
 int query_all_configs(ConfigList* config_list);
 void free_config_list(ConfigList* config_list);
+
+int update_ftp_config(const FtpConfigInfo* ftp_config);
+int query_ftp_config(FtpConfigInfo* ftp_config);
+
+int query_all_sz651_configs(SzConfigList* sz651_list);
+int add_sz651_config(const SzConfigInfo* sz651_info);
+int delete_sz651_config_by_id(int id);
+int modify_sz651_config_by_id(const SzConfigInfo* sz651_info);
+void free_sz651_config_list(SzConfigList* sz651_list);
 
 #endif
