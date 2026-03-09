@@ -221,13 +221,24 @@ static int config_init() {
         strncpy(remotePortConfig.ConfigValue, "", sizeof(remotePortConfig.ConfigValue) - 1);
         strncpy(remotePortConfig.ConfigDesc, "云端管理平台端口", sizeof(remotePortConfig.ConfigDesc) - 1);
         remotePortConfig.ConfigType = 1;
-        
         rc = add_config(&remotePortConfig);
         if (rc != 0) {
             LOG_ERROR("Failed to insert initial config RemoteCloudIp");
             return rc;
         }
         
+
+        ConfigInfo manualReadingWaterDataConfig = {0};
+        strncpy(manualReadingWaterDataConfig.ConfigKey, "ManualReadingWaterData", sizeof(manualReadingWaterDataConfig.ConfigKey) - 1);
+        strncpy(manualReadingWaterDataConfig.ConfigValue, "", sizeof(manualReadingWaterDataConfig.ConfigValue) - 1);
+        strncpy(manualReadingWaterDataConfig.ConfigDesc, "人工读水尺读数", sizeof(manualReadingWaterDataConfig.ConfigDesc) - 1);
+        manualReadingWaterDataConfig.ConfigType = 1;
+        rc = add_config(&manualReadingWaterDataConfig);
+        if (rc != 0) {
+            LOG_ERROR("Failed to insert initial config ManualReadingWaterData");
+            return rc;
+        }
+
         LOG_INFO("Initial configuration inserted successfully");
     } else {
         LOG_INFO("Configuration table already has %d records, skipping initialization", count);
